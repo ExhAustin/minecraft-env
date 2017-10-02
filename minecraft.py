@@ -12,7 +12,7 @@ class Grid3DState(object):
     Implemented as a 3d numpy array.
             air = -1
             block = 0
-            agent = agent_id
+            agent = positive integer (agent_id)
     '''
     def __init__(self, world0):
         self.world_data = world0.copy()
@@ -49,7 +49,7 @@ class Grid3DState(object):
             coord: Position of agent. Numpy array of length 3.
             ob_range: Vision range. Numpy array of length 3.
 
-        observation.shape is (2*ob_range[0]+1, 2*ob_range[1]+2, 2*ob_range[2]+3)
+        observation.shape is (2*ob_range[0]+1, 2*ob_range[1]+1, 2*ob_range[2]+1)
         '''
         ob = -2*np.ones([2*ob_range[0]+1, 2*dims[1]+1, 2*dims[2]+1])
 
