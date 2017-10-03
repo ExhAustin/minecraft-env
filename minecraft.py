@@ -215,8 +215,14 @@ class MinecraftEnv(gym.Env):
         self.observation_space = spaces.Dict({'facing': fac_space, 'position': pos_space, 'view': view_space})
 
     # Resets environment
-    #TODO: place state_init and state_obj initializations in @_state_init.setter, and @state_obj.setter
-    def _reset(self):
+    #TODO: Find a way to pass world_plan and world_init into env
+    def _reset(self, **kwargs):
+        for key in kwargs:
+            if key=='world_plan':
+                self.state_obj = np.array(kwargs[key])
+            elif key=='world_init':
+                self.state_init = np.array(kwargs[key])
+
         assert self.state_obj is not None, 'Objective world not initialized, please assign a plan to env._state_obj first.'
         assert self.state_init is not None, 'Initial world not initialized, plase assign a world to env.state_init first.'
 
@@ -337,23 +343,24 @@ class MinecraftEnv(gym.Env):
         return self.world.state
 
     @property
-    def _state_init(self):
+    def world_init(self):
         return self.state_init
 
-    @_state_init.setter
-    def _state_init(self, s0):
-        if s0 is not None:
-            s0 = np.array(s0)
-            assert len(s0.shape) == 3, 'Wrong number of dimensions for \'state_init\''
-            self.state_init = s0.copy()
+    @world_init.setter
+    def world_init(self, world0):
+        if world0 is not None:
+            world0 = np.array(world0)
+            assert len(world0.shape) == 3, 'Wrong number of dimensions for \'state_init\''
+            self.state_init = world0.copy()
             self.initObSpace()
 
     @property
-    def _state_obj(self):
+    def world_plan(self):
         return self.state_obj
 
-    @_state_obj.setter
-    def _state_obj(self, plan):
+    @world_plan.setter
+    def world_plan(self, plan):
+        print(plan)
         if plan is not None:
             print(plan)
             plan = np.array(plan)
