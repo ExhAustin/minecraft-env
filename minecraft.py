@@ -15,20 +15,20 @@ class Grid3DState(object):
             agent = positive integer (agent_id)
     '''
     def __init__(self, world0):
-        self.world_data = world0.copy()
-        self.dims = np.array(world.shape)
+        self.state = world0.copy()
+        self.shape = np.array(world.shape)
 
     # Get value of block
     def get(self, coord):
         try:
-            return self.world_data[coord[0], coord[1], coord[2]]
+            return self.state[coord[0], coord[1], coord[2]]
         except IndexError:
             return -2
 
     # Set block to input value
     def set(self, coord, val):
         try:
-            self.world_data[coord[0], coord[1], coord[2]] = val
+            self.state[coord[0], coord[1], coord[2]] = val
             return True
         except IndexError:
             return False
@@ -51,29 +51,29 @@ class Grid3DState(object):
 
         observation.shape is (2*ob_range[0]+1, 2*ob_range[1]+1, 2*ob_range[2]+1)
         '''
-        ob = -2*np.ones([2*ob_range[0]+1, 2*dims[1]+1, 2*dims[2]+1])
+        ob = -2*np.ones([2*ob_range[0]+1, 2*ob_range[1]+1, 2*ob_range[2]+1])
 
         # two corners of view in world coordinate
         c0 = coord - ob_range
         c1 = coord + ob_range
 
         # clip according to world boundaries
-        c0_c = np.clip(c0, [0,0,0], self.dims) 
-        c1_c = np.clip(c1, [0,0,0], self.dims) 
+        c0_c = np.clip(c0, [0,0,0], self.shape) 
+        c1_c = np.clip(c1, [0,0,0], self.shape) 
 
         # two corners of view in observation coordinates
         ob_c0 = -(c0 - c0_c)
         ob_c1 = (ob_range - 1) - (c1 - c1_c)
 
         # assign data from world to observation
-        data = self.world[c0_c[0]:c1_c[0], c0_c[1]:c1_c[1], c0_c[2]:c1_c[2]]
+        data = self.state[c0_c[0]:c1_c[0], c0_c[1]:c1_c[1], c0_c[2]:c1_c[2]]
         ob[ob_c0[0]:ob_c1[0], ob_c0[1]:ob_c1[1], ob_c0[2]:ob_c1[2]] = data
 
         return ob
 
     # Compare with a plan to determine job completion
-    def done(self, world_plan):
-        return np.min((self.world_data == -1) == world_plan)
+    def done(self, state_obj):
+        return np.min((self.state == -1) == state_obj)
 
 class AgentState(object):
     '''
@@ -94,9 +94,9 @@ class AgentState(object):
         attr_list = []
 
         # list all agents
-        for i in world.dims[0]:
-            for j in world.dims[1]:
-                for k in world.dims[2]:
+        for i in world.shape[0]:
+            for j in world.shape[1]:
+                for k in world.shape[2]:
                     val = world.get([i, j, k])
                     if val > 0:
                         assert val not in agent_list, 'ID conflict between agents'
@@ -194,8 +194,8 @@ class MinecraftEnv(gym.Env):
 
         # To be defined in other functions
         self.world = None
-        self.world_init = None
-        self.world_plan = None
+        self.state_init = None
+        self.state_obj = None
         self.observation_space = None
         self.agents = None
 
@@ -206,25 +206,25 @@ class MinecraftEnv(gym.Env):
         if observation_mode == 'default':
             box_high = 1*np.ones(self.ob_shape)
         elif observation_mode == 'id_visible':
-            box_high = self.world.shape[0]*self.world.shape[2]*np.ones(self.ob_shape) # max agent id = area of horizontal space
+            box_high = self.state.shape[0]*self.state.shape[2]*np.ones(self.ob_shape) # max agent id = area of horizontal space
             
-        pos_space = spaces.Tuple(spaces.Discrete(self.world.shape[0]), spaces.Discrete(self.world.shape[1]), spaces.Discrete(self.world.shape[2]))
+        pos_space = spaces.Tuple(spaces.Discrete(self.state.shape[0]), spaces.Discrete(self.state.shape[1]), spaces.Discrete(self.state.shape[2]))
         fac_space = spaces.Discrete(4)
         view_space = spaces.box(box_low, box_high)
 
         self.observation_space = spaces.Dict({'facing': fac_space, 'position': pos_space, 'view': view_space})
 
     # Resets environment
-    #TODO: place world and world plan initializations in @property, @world.setter, and @world_plan.setter
+    #TODO: place state_init and state_obj initializations in @_state_init.setter, and @state_obj.setter
     def _reset(self):
-        assert self.world_plan is not None, 'Objective world not initialized, please assign a plan to env.world_plan first.'
-        assert self.world is not None, 'Initial world not initialized, plase assign a world to env.world first.'
+        assert self.state_obj is not None, 'Objective world not initialized, please assign a plan to env.world_plan first.'
+        assert self.state_init is not None, 'Initial world not initialized, plase assign a world to env.world first.'
 
         # Check everything is all right
-        assert world.shape == world_plan.shape, '\'world\' and \'world_plan\' dimensions do not match'
+        assert state_init.shape == state_obj.shape, '\'world\' and \'world_plan\' dimensions do not match'
         
         # Initialize data structures
-        self.world = Grid3DState(world_init)
+        self.world = Grid3DState(state_init)
 
         if self.agents is None:
             self.agents = AgentState()
@@ -326,7 +326,7 @@ class MinecraftEnv(gym.Env):
     # Render gridworld state
     #TODO: Find a way to render the gridworld
     def _render(self, mode="human", close=False):
-        return self.world.world_data
+        return self.world.state
 
 
 
@@ -334,23 +334,28 @@ class MinecraftEnv(gym.Env):
 
     @property
     def _state(self):
-        return self.world.world_data
+        return self.world.state
 
     @property
-    def _world_init(self):
-        return self.world.world_init
+    def _state_init(self):
+        return self.state_init
 
-    @_world_init.setter
-    def _world_init(self, world):
-        assert len(world.shape) == 3, 'Wrong number of dimensions for \'world\''
-        self.world_init = world.copy()
-        self.initObSpace()
+    @_state_init.setter
+    def _state_init(self, s0):
+        if s0 is not None:
+            s0 = np.array(s0)
+            assert len(s0.shape) == 3, 'Wrong number of dimensions for \'state_init\''
+            self.state_init = s0.copy()
+            self.initObSpace()
 
     @property
-    def _world_plan(self):
-        return self.world_plan
+    def _state_obj(self):
+        return self.state_obj
 
-    @_world_plan.setter
-    def _world_plan(self, plan):
-        assert len(world_plan.shape) == 3, 'Wrong number of dimensions for \'world_plan\''
-        self.world_plan = np.array(plan)
+    @_state_obj.setter
+    def _state_obj(self, plan):
+        if plan is not None:
+            print(plan)
+            plan = np.array(plan)
+            assert len(plan.shape) == 3, 'Wrong number of dimensions for \'state_obj\''
+            self.state_obj = plan
