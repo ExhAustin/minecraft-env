@@ -217,11 +217,11 @@ class MinecraftEnv(gym.Env):
     # Resets environment
     #TODO: place state_init and state_obj initializations in @_state_init.setter, and @state_obj.setter
     def _reset(self):
-        assert self.state_obj is not None, 'Objective world not initialized, please assign a plan to env.world_plan first.'
-        assert self.state_init is not None, 'Initial world not initialized, plase assign a world to env.world first.'
+        assert self.state_obj is not None, 'Objective world not initialized, please assign a plan to env._state_obj first.'
+        assert self.state_init is not None, 'Initial world not initialized, plase assign a world to env.state_init first.'
 
         # Check everything is all right
-        assert state_init.shape == state_obj.shape, '\'world\' and \'world_plan\' dimensions do not match'
+        assert state_init.shape == state_obj.shape, '\'state_init\' and \'state_obj\' dimensions do not match'
         
         # Initialize data structures
         self.world = Grid3DState(state_init)
@@ -316,7 +316,7 @@ class MinecraftEnv(gym.Env):
         state = self.observe(agent_id)
 
         # Done?
-        done = self.world.done(self.world_plan)
+        done = self.world.done(self.state_obj)
 
         # Additional info
         info = None
