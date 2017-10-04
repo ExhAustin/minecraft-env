@@ -16,7 +16,7 @@ class Grid3DState(object):
     '''
     def __init__(self, world0):
         self.state = world0.copy()
-        self.shape = np.array(world.shape)
+        self.shape = np.array(world0.shape)
 
     # Get value of block
     def get(self, coord):
@@ -176,7 +176,7 @@ class MinecraftEnv(gym.Env):
         # Parse input parameters and check if valid
         #   observation_range
         if type(observation_range) is int:
-            ob_range = observation_range*np.ones(3)
+            ob_range = observation_range*np.ones(3, dtype=int)
         else:
             assert len(observation_range) == 3, 'Wrong number of dimensions for \'observation_range\''
             ob_range = np.array(observation_range)
@@ -199,18 +199,36 @@ class MinecraftEnv(gym.Env):
         self.observation_space = None
         self.agents = None
 
+        # debug
+        world0 = np.zeros([20,10,20])
+
+        world = world0.copy()
+        world[10,0,10] = -1
+        world[10,0,11] = -1
+        world[10,0,12] = 1
+        world[11,0,10] = 2
+
+        world_plan = world0.copy()
+        world_plan[10,0,9] = 1
+        world_plan[10,0,13] = 1
+
+        self.world = Grid3DState(world)
+        self.state_init = world
+        self.state_obj = world_plan
+        self._initObSpace()
+
     # Initialize observation space
     def _initObSpace(self):
         # Observation space
         box_low = -2*np.ones(self.ob_shape)
-        if observation_mode == 'default':
+        if self.ob_mode == 'default':
             box_high = 1*np.ones(self.ob_shape)
-        elif observation_mode == 'id_visible':
+        elif self.ob_mode == 'id_visible':
             box_high = self.state.shape[0]*self.state.shape[2]*np.ones(self.ob_shape) # max agent id = area of horizontal space
             
-        pos_space = spaces.Tuple(spaces.Discrete(self.state.shape[0]), spaces.Discrete(self.state.shape[1]), spaces.Discrete(self.state.shape[2]))
+        pos_space = spaces.Tuple([spaces.Discrete(self.world.shape[0]), spaces.Discrete(self.world.shape[1]), spaces.Discrete(self.world.shape[2])])
         fac_space = spaces.Discrete(4)
-        view_space = spaces.box(box_low, box_high)
+        view_space = spaces.Box(box_low, box_high)
 
         self.observation_space = spaces.Dict({'facing': fac_space, 'position': pos_space, 'view': view_space})
 
