@@ -8,15 +8,19 @@ import sys
 
 '''
 3D Grid Environment
-    Observation: An agent's position, facing and a limited view of the world.
+    Observation: (OrderedDict)
         Position:   X, Y, Z  (+Y = up)
         Facing:     {0:+Z, 1:+X, 2:-Z, 3:-X}
-        View:       A box centered around the agent
+        View:       A box centered around the agent (limited view)
             block = -1
             air = 0
             agent = 1 (agent_id in id_visible mode, agent_id is a positive integer)
             out of world range = -2
-    Action space: ({agent_id: positive integer}, {0:MOVE_FORWARDS, 1:MOVE_BACKWARDS, 2:TURN_LEFT, 3:TURN_RIGHT, 4:PICK, 5:PLACE})
+
+    Action space: (Tuple)
+        agent_id: positive integer
+        action: {0:MOVE_FORWARDS, 1:MOVE_BACKWARDS, 2:TURN_LEFT, 3:TURN_RIGHT, 4:PICK, 5:PLACE}
+
     Reward: -1 for each action, +1 for each block correctly placed
 '''
 
@@ -24,9 +28,9 @@ class Grid3DState(object):
     '''
     3D Grid State. 
     Implemented as a 3d numpy array.
-            air = -1
-            block = 0
-            agent = positive integer (agent_id)
+        air = -1
+        block = 0
+        agent = positive integer (agent_id)
     '''
     def __init__(self, world0):
         self.state = world0.copy()
@@ -65,11 +69,11 @@ class Grid3DState(object):
         Observation: Box centered around agent position
             (returns -2 for blocks outside world boundaries)
 
-        Args:
+        args:
             coord: Position of agent. Numpy array of length 3.
             ob_range: Vision range. Numpy array of length 3.
 
-        observation.shape is (2*ob_range[0]+1, 2*ob_range[1]+1, 2*ob_range[2]+1)
+        note: observation.shape is (2*ob_range[0]+1, 2*ob_range[1]+1, 2*ob_range[2]+1)
         '''
         ob = -2*np.ones([2*ob_range[0]+1, 2*ob_range[1]+1, 2*ob_range[2]+1])
 
@@ -98,14 +102,15 @@ class Grid3DState(object):
     def done(self, state_obj):
         return np.min((self.state == -1) == state_obj)
 
+
 class AgentState(object):
     '''
     Agent states. Keeps track of every agent in a database.
     Implemented as a 2d numpy array.
     Attributes:
         agent_id    integer
-        facing      {0:+Z, 1:+X, 2:-Z, 3:-X} (agents are currently initialized facing +Z)
         position    vector - (x, y, z)
+        facing      {0:+Z, 1:+X, 2:-Z, 3:-X} (agents are currently initialized facing +Z)
 
     agent_data[agent_id,:] = [x, y, z, facing]
     '''
@@ -147,7 +152,7 @@ class AgentState(object):
     def set(self, agent_id, new_state):
         self.agent_data[agent_id-1, :] = new_state
 
-    # Return predicted new state after action
+    # Return predicted new state after action (Does not actually execute action)
     def act(self, agent_id, action):
         current_state = self.agent_data[agent_id-1,:]
         new_state = current_state.copy()
@@ -183,15 +188,19 @@ class AgentState(object):
 class MinecraftEnv(gym.Env):
     '''
     3D Grid Environment
-        Observation: An agent's position, facing and a limited view of the world.
+        Observation: (OrderedDict)
             Position:   X, Y, Z  (+Y = up)
             Facing:     {0:+Z, 1:+X, 2:-Z, 3:-X}
-            View:       A box centered around the agent
+            View:       A box centered around the agent (limited view)
                 block = -1
                 air = 0
                 agent = 1 (agent_id in id_visible mode, agent_id is a positive integer)
                 out of world range = -2
-        Action space: ({agent_id: positive integer}, {0:MOVE_FORWARDS, 1:MOVE_BACKWARDS, 2:TURN_LEFT, 3:TURN_RIGHT, 4:PICK, 5:PLACE})
+
+        Action space: (Tuple)
+            agent_id: positive integer
+            action: {0:MOVE_FORWARDS, 1:MOVE_BACKWARDS, 2:TURN_LEFT, 3:TURN_RIGHT, 4:PICK, 5:PLACE}
+
         Reward: -1 for each action, +1 for each block correctly placed
     '''
     metadata = {"render.modes": ["human", "ansi"]}
@@ -228,6 +237,11 @@ class MinecraftEnv(gym.Env):
 
     # Define objective world here
     def _setObjective(self):
+        '''
+        Objective state of the world (3d numpy array)
+            air = 0
+            block = 1
+        '''
         self.world_shape = (20,10,20)
 
         world_plan = np.zeros(self.world_shape)
@@ -239,6 +253,12 @@ class MinecraftEnv(gym.Env):
 
     # Define initial agent distribution here
     def _setInitial(self):
+        '''
+        Initial state of the world (3d numpy array)
+            air = 0
+            block = -1
+            agent = agent_id (positive integer)
+        '''
         world = np.zeros(self.world_shape)
 
         # block (replace with a block source somehow)
