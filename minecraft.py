@@ -6,6 +6,20 @@ from collections import OrderedDict
 
 import sys
 
+'''
+3D Grid Environment
+    Observation: An agent's position, facing and a limited view of the world.
+        Position:   X, Y, Z  (+Y = up)
+        Facing:     {0:+Z, 1:+X, 2:-Z, 3:-X}
+        View:       A box centered around the agent
+            block = -1
+            air = 0
+            agent = 1 (agent_id in id_visible mode, agent_id is a positive integer)
+            out of world range = -2
+    Action space: ({agent_id: positive integer}, {0:MOVE_FORWARDS, 1:MOVE_BACKWARDS, 2:TURN_LEFT, 3:TURN_RIGHT, 4:PICK, 5:PLACE})
+    Reward: -1 for each action, +1 for each block correctly placed
+'''
+
 class Grid3DState(object):
     '''
     3D Grid State. 
@@ -20,6 +34,9 @@ class Grid3DState(object):
 
     # Get value of block
     def get(self, coord):
+        # change coordinates to int
+        coord = np.array(coord, dtype=int)
+
         try:
             return self.state[coord[0], coord[1], coord[2]]
         except IndexError:
@@ -27,6 +44,9 @@ class Grid3DState(object):
 
     # Set block to input value
     def set(self, coord, val):
+        # change coordinates to int
+        coord = np.array(coord, dtype=int)
+
         try:
             self.state[coord[0], coord[1], coord[2]] = val
             return True
@@ -65,12 +85,12 @@ class Grid3DState(object):
         c1_c = np.clip(c1, [0,0,0], self.shape) 
 
         # two corners of view in observation coordinates
-        ob_c0 = -(c0 - c0_c)
-        ob_c1 = (ob_range - 1) - (c1 - c1_c)
+        ob_c0 = c0_c - coord + ob_range
+        ob_c1 = c1_c - coord + ob_range
 
         # assign data from world to observation
-        data = self.state[c0_c[0]:c1_c[0], c0_c[1]:c1_c[1], c0_c[2]:c1_c[2]]
-        ob[ob_c0[0]:ob_c1[0], ob_c0[1]:ob_c1[1], ob_c0[2]:ob_c1[2]] = data
+        data = self.state[c0_c[0]:c1_c[0]+1, c0_c[1]:c1_c[1]+1, c0_c[2]:c1_c[2]+1]
+        ob[ob_c0[0]:ob_c1[0]+1, ob_c0[1]:ob_c1[1]+1, ob_c0[2]:ob_c1[2]+1] = data
 
         return ob
 
@@ -83,9 +103,11 @@ class AgentState(object):
     Agent states. Keeps track of every agent in a database.
     Implemented as a 2d numpy array.
     Attributes:
-        agent_id    integer (index of first dimension)
-        facing      {0:+Z, 1:+X, 2:-Z, 3:-X}
+        agent_id    integer
+        facing      {0:+Z, 1:+X, 2:-Z, 3:-X} (agents are currently initialized facing +Z)
         position    vector - (x, y, z)
+
+    agent_data[agent_id,:] = [x, y, z, facing]
     '''
 
     def __init__(self, world=None):
@@ -154,8 +176,8 @@ class AgentState(object):
     def validateID(self, agent_id):
         assert type(agent_id) is int, 'Non-integer agent ID'
         assert agent_id > 0, 'Non-positive agent ID'
-        assert agent_id < self.agent_data.shape[0], 'Agent ID out of range'
-        assert self.agent_data[agent_id,0] != -1, 'Non-existent agent ID'
+        assert agent_id < self.agent_data.shape[0]+1, 'Agent ID out of range'
+        assert self.agent_data[agent_id-1,0] != -1, 'Non-existent agent ID'
 
 
 class MinecraftEnv(gym.Env):
@@ -210,8 +232,8 @@ class MinecraftEnv(gym.Env):
 
         world_plan = np.zeros(self.world_shape)
 
-        world_plan[10,0,9] = 1
-        world_plan[10,0,13] = 1
+        world_plan[9,0,10] = 1
+        world_plan[13,0,10] = 1
 
         self.state_obj = world_plan
 
@@ -221,11 +243,11 @@ class MinecraftEnv(gym.Env):
 
         # block (replace with a block source somehow)
         world[10,0,10] = -1
-        world[10,0,11] = -1
+        world[11,0,10] = -1
 
         # agents
-        world[10,0,12] = 1
-        world[11,0,10] = 2
+        world[12,0,10] = 1
+        world[10,0,9] = 2
 
         self.state_init = world
 
@@ -275,13 +297,14 @@ class MinecraftEnv(gym.Env):
 
     # Executes an action by an agent
     def _step(self, action_input):
-        # Parse action input
-        agent_id = action_input[0]
-        action = action_input[1]
-
         # Check action input
-        assert action in range(5), 'Invalid action'
-        self.agents.validateID(agent_id)
+        assert len(action_input) == 2, 'Action input should be a tuple with the form (agent_id, action)'
+        assert action_input[1] in range(6), 'Invalid action'
+        self.agents.validateID(action_input[0])
+
+        # Parse action input
+        agent_id = int(action_input[0])
+        action = np.array(action_input[1], dtype=int)
 
         # Get current agent state
         agent_state = self.agents.get(agent_id)
@@ -327,7 +350,7 @@ class MinecraftEnv(gym.Env):
         elif action in [4,5]:       # Pick & Place
             # determine block movement
             top = agent_pos + np.array([0,1,0])
-            front = agent_pos + agent.facing2vec(agent_fac)
+            front = agent_pos + self.agents.facing2vec(agent_fac)
 
             if action == 4:
                 source = front
@@ -339,7 +362,8 @@ class MinecraftEnv(gym.Env):
             # execute
             if self.world.get(source) == -1 and self.world.get(dest) == 0:
                 self.world.swap(source, dest)
-                if action == 5 and self.world_plan[dest[0], dest[1], dest[2]] == 1:
+                dest = np.array(dest, dtype=int)
+                if action == 5 and self.state_obj[dest[0], dest[1], dest[2]] == 1:
                     reward = 1
 
         # Perform observation
