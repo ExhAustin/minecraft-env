@@ -53,6 +53,9 @@ class Grid3DState(object):
         '''
         ob = -2*np.ones([2*ob_range[0]+1, 2*ob_range[1]+1, 2*ob_range[2]+1])
 
+        # change coordinates to int
+        coord = np.array(coord, dtype=int)
+
         # two corners of view in world coordinate
         c0 = coord - ob_range
         c1 = coord + ob_range
@@ -85,9 +88,12 @@ class AgentState(object):
         position    vector - (x, y, z)
     '''
 
-    def __init__(self):
-        self.agent_data = -np.ones([0,4])
-        self.max_agents = 0
+    def __init__(self, world=None):
+        if world is None:
+            self.agent_data = -np.ones([0,4])
+            self.max_agents = 0
+        else:
+            self.scanWorld(world)
 
     # Scan world for agents and load them into database
     def scanWorld(self, world):
@@ -127,7 +133,7 @@ class AgentState(object):
         # Move
         if action in [0,1]:
             sign = (-1)**action
-            move_vec = sign*self.facing2vec(self, current_state[3])
+            move_vec = sign*self.facing2vec(current_state[3])
             new_state[0:3] += move_vec
 
         # Turn
@@ -163,7 +169,7 @@ class MinecraftEnv(gym.Env):
                 air = 0
                 agent = 1 (agent_id in id_visible mode, agent_id is a positive integer)
                 out of world range = -2
-        Action space: {0:MOVE_FORWARDS, 1:MOVE_BACKWARDS, 2:TURN_LEFT, 3:TURN_RIGHT, 4:PICK, 5:PLACE}
+        Action space: ({agent_id: positive integer}, {0:MOVE_FORWARDS, 1:MOVE_BACKWARDS, 2:TURN_LEFT, 3:TURN_RIGHT, 4:PICK, 5:PLACE})
         Reward: -1 for each action, +1 for each block correctly placed
     '''
     metadata = {"render.modes": ["human", "ansi"]}
@@ -191,29 +197,37 @@ class MinecraftEnv(gym.Env):
         self.ob_shape = 2*ob_range + 1
         self.ob_mode = observation_mode
 
-        # To be defined in other functions
-        self.world = None
-        self.state_init = None
-        self.state_obj = None
-        self.observation_space = None
-        self.agents = None
+        # Initialize data structures
+        self._setObjective()
+        self._setInitial()
+        self.world = Grid3DState(self.state_init)
+        self.agents = AgentState(self.world)
+        self._initSpaces()
 
-        # debug
-        world0 = np.zeros([20,10,20])
+    # Define objective world here
+    def _setObjective(self):
+        self.world_shape = (20,10,20)
 
-        world = world0.copy()
-        world[10,0,10] = -1
-        world[10,0,11] = -1
-        world[10,0,12] = 1
-        world[11,0,10] = 2
+        world_plan = np.zeros(self.world_shape)
 
-        world_plan = world0.copy()
         world_plan[10,0,9] = 1
         world_plan[10,0,13] = 1
 
-        self.world = Grid3DState(world)
-        self.state_init = world
         self.state_obj = world_plan
+
+    # Define initial agent distribution here
+    def _setInitial(self):
+        world = np.zeros(self.world_shape)
+
+        # block (replace with a block source somehow)
+        world[10,0,10] = -1
+        world[10,0,11] = -1
+
+        # agents
+        world[10,0,12] = 1
+        world[11,0,10] = 2
+
+        self.state_init = world
 
     # Initialize action & observation spaces
     def _initSpaces(self):
@@ -233,31 +247,6 @@ class MinecraftEnv(gym.Env):
 
         self.observation_space = spaces.Dict({'facing': fac_space, 'position': pos_space, 'view': view_space})
 
-    # Resets environment
-    #TODO: Find a way to pass world_plan and world_init into env
-    def _reset(self, **kwargs):
-        for key in kwargs:
-            if key=='world_plan':
-                self.state_obj = np.array(kwargs[key])
-            elif key=='world_init':
-                self.state_init = np.array(kwargs[key])
-
-        assert self.state_obj is not None, 'Objective world not initialized, please assign a plan to env._state_obj first.'
-        assert self.state_init is not None, 'Initial world not initialized, plase assign a world to env.state_init first.'
-
-        # Check everything is all right
-        assert self.state_init.shape == self.state_obj.shape, '\'state_init\' and \'state_obj\' dimensions do not match'
-        
-        # Initialize data structures
-        self.world = Grid3DState(self.state_init)
-
-        if self.agents is None:
-            self.agents = AgentState()
-        self.agents.scanWorld(self.world)
-
-        # Initialize spaces
-        self._initSpaces()
-
     # Returns an observation of an agent
     def _observe(self, agent_id):
         # Check input
@@ -265,8 +254,8 @@ class MinecraftEnv(gym.Env):
 
         # Get agent states
         agent_state = self.agents.get(agent_id)
-        agent_pos = agents_state[0:3]
-        agent_fac = agents_state[3]
+        agent_pos = agent_state[0:3]
+        agent_fac = agent_state[3]
 
         # Get world observation
         ob_view = self.world.getObservation(agent_pos, self.ob_range)
@@ -274,6 +263,15 @@ class MinecraftEnv(gym.Env):
             ob_view = np.clip(ob_view, -2, 1)
 
         return OrderedDict({'facing': agent_fac, 'position': agent_pos, 'view': ob_view})
+
+    # Resets environment
+    def _reset(self):
+        # Check everything is alright
+        assert self.state_init.shape == self.state_obj.shape, '\'state_init\' and \'state_obj\' dimensions do not match'
+        
+        # Initialize data structures
+        self.world = Grid3DState(self.state_init)
+        self.agents.scanWorld(self.world)
 
     # Executes an action by an agent
     def _step(self, action_input):
@@ -345,7 +343,7 @@ class MinecraftEnv(gym.Env):
                     reward = 1
 
         # Perform observation
-        state = self.observe(agent_id)
+        state = self._observe(agent_id)
 
         # Done?
         done = self.world.done(self.state_obj)
@@ -362,8 +360,7 @@ class MinecraftEnv(gym.Env):
 
 
 
-
-
+    ''' # Can't seem to get those to work
     @property
     def _state(self):
         return self.world.state
@@ -392,3 +389,4 @@ class MinecraftEnv(gym.Env):
             plan = np.array(plan)
             assert len(plan.shape) == 3, 'Wrong number of dimensions for \'state_obj\''
             self.state_obj = plan
+    '''
