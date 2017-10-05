@@ -166,7 +166,7 @@ class AgentState(object):
         # Turn
         elif action in [2,3]:
             sign = (-1)**(action-2)
-            new_state[3] += sign
+            new_state[3] = (new_state[3] + sign) % 4
 
         return new_state
 
