@@ -86,7 +86,8 @@ class AgentState(object):
     '''
 
     def __init__(self):
-        self.agent_data = -np.ones([0,2])
+        self.agent_data = -np.ones([0,4])
+        self.max_agents = 0
 
     # Scan world for agents and load them into database
     def scanWorld(self, world):
@@ -94,32 +95,33 @@ class AgentState(object):
         attr_list = []
 
         # list all agents
-        for i in world.shape[0]:
-            for j in world.shape[1]:
-                for k in world.shape[2]:
+        for i in range(world.shape[0]):
+            for j in range(world.shape[1]):
+                for k in range(world.shape[2]):
                     val = world.get([i, j, k])
                     if val > 0:
                         assert val not in agent_list, 'ID conflict between agents'
-                        assert type(val) is int, 'Non-integer agent ID'
+                        assert type(val) is int or float, 'Non-integer agent ID'
                         agent_list.append(val)
                         attr_list.append(np.array([i, j, k, 0]))
 
         # load agents into database
-        self.agent_data = -np.ones([max(agent_list), 2])
-        for i in len(agent_list):
-            self.agent_data[agent_list[i]] = attr_list[i]
+        self.max_agents = int(max(agent_list))
+        self.agent_data = -np.ones([self.max_agents, 4])
+        for i in range(len(agent_list)):
+            self.agent_data[int(agent_list[i]) - 1] = attr_list[i]
 
     # Get attributes of an agent
     def get(self, agent_id):
-        return self.agent_data[agent_id, :]
+        return self.agent_data[agent_id-1, :]
 
     # Set attributes of an agent
     def set(self, agent_id, new_state):
-        self.agent_data[agent_id, :] = new_state
+        self.agent_data[agent_id-1, :] = new_state
 
     # Return predicted new state after action
     def act(self, agent_id, action):
-        current_state = self.agent_data[agent_id,:]
+        current_state = self.agent_data[agent_id-1,:]
         new_state = current_state.copy()
 
         # Move
@@ -139,7 +141,7 @@ class AgentState(object):
     def facing2vec(self, fac):
         dx = (fac % 2)*(2 - fac)
         dy = 0
-        dz = ((fac+1) % 2)*(1 - fac)
+        dz = ((fac + 1) % 2)*(1 - fac)
         return np.asarray([dx, dy, dz])
 
     # Check if agent ID is valid
@@ -189,9 +191,6 @@ class MinecraftEnv(gym.Env):
         self.ob_shape = 2*ob_range + 1
         self.ob_mode = observation_mode
 
-        # Action space
-        self.action_space = spaces.Discrete(6)
-
         # To be defined in other functions
         self.world = None
         self.state_init = None
@@ -215,10 +214,12 @@ class MinecraftEnv(gym.Env):
         self.world = Grid3DState(world)
         self.state_init = world
         self.state_obj = world_plan
-        self._initObSpace()
 
-    # Initialize observation space
-    def _initObSpace(self):
+    # Initialize action & observation spaces
+    def _initSpaces(self):
+        # Action space
+        self.action_space = spaces.Tuple([spaces.Discrete(self.agents.max_agents), spaces.Discrete(6)])
+
         # Observation space
         box_low = -2*np.ones(self.ob_shape)
         if self.ob_mode == 'default':
@@ -245,14 +246,17 @@ class MinecraftEnv(gym.Env):
         assert self.state_init is not None, 'Initial world not initialized, plase assign a world to env.state_init first.'
 
         # Check everything is all right
-        assert state_init.shape == state_obj.shape, '\'state_init\' and \'state_obj\' dimensions do not match'
+        assert self.state_init.shape == self.state_obj.shape, '\'state_init\' and \'state_obj\' dimensions do not match'
         
         # Initialize data structures
-        self.world = Grid3DState(state_init)
+        self.world = Grid3DState(self.state_init)
 
         if self.agents is None:
             self.agents = AgentState()
         self.agents.scanWorld(self.world)
+
+        # Initialize spaces
+        self._initSpaces()
 
     # Returns an observation of an agent
     def _observe(self, agent_id):
@@ -272,8 +276,12 @@ class MinecraftEnv(gym.Env):
         return OrderedDict({'facing': agent_fac, 'position': agent_pos, 'view': ob_view})
 
     # Executes an action by an agent
-    def _step(self, action, agent_id):
-        # Check input
+    def _step(self, action_input):
+        # Parse action input
+        agent_id = action_input[0]
+        action = action_input[1]
+
+        # Check action input
         assert action in range(5), 'Invalid action'
         self.agents.validateID(agent_id)
 
@@ -370,7 +378,7 @@ class MinecraftEnv(gym.Env):
             world0 = np.array(world0)
             assert len(world0.shape) == 3, 'Wrong number of dimensions for \'state_init\''
             self.state_init = world0.copy()
-            self.initObSpace()
+            self.initSpaces()
 
     @property
     def world_plan(self):
